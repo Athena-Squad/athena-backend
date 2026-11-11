@@ -1,6 +1,65 @@
 -- Execute after creating the tables in the public schema.
--- Teacher accounts and student-teacher assignments must be provisioned by a
--- trusted server or the Supabase SQL Editor, never by the client.
+-- Teacher accounts and student-teacher assignments require trusted
+-- provisioning; never expose the service_role key in the client.
+
+create or replace function public.provision_auth_user()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_nome_completo text;
+  v_tipo_solicitado text;
+  v_tipo_perfil text;
+  v_cref text;
+  v_perfil_id uuid;
+begin
+  v_nome_completo := nullif(trim(new.raw_user_meta_data ->> 'nome_completo'), '');
+  v_tipo_solicitado := coalesce(
+    nullif(trim(new.raw_user_meta_data ->> 'tipo_perfil'), ''),
+    'aluno'
+  );
+  v_cref := nullif(trim(new.raw_user_meta_data ->> 'cref'), '');
+
+  if v_nome_completo is null then
+    raise exception 'O atributo nome_completo é obrigatório para provisionar o usuário';
+  end if;
+
+  if v_tipo_solicitado not in ('aluno', 'professor') then
+    raise exception 'tipo_perfil inválido: %', v_tipo_solicitado;
+  end if;
+
+  if v_tipo_solicitado = 'professor'
+     and new.raw_app_meta_data ->> 'tipo_perfil' is distinct from 'professor' then
+    raise exception 'O provisionamento de professores exige tipo_perfil confiável em raw_app_meta_data';
+  end if;
+
+  v_tipo_perfil := v_tipo_solicitado;
+
+  insert into public.perfis (auth_id, nome_completo, tipo_perfil)
+  values (new.id, v_nome_completo, v_tipo_perfil::public.tipo_perfil)
+  returning id into v_perfil_id;
+
+  if v_tipo_perfil = 'professor' then
+    if v_cref is null then
+      raise exception 'O atributo cref é obrigatório para provisionar um professor';
+    end if;
+
+    insert into public.professores (perfil_id, cref)
+    values (v_perfil_id, v_cref);
+  end if;
+
+  return new;
+end;
+$$;
+
+revoke all on function public.provision_auth_user() from public, anon, authenticated;
+
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+after insert on auth.users
+for each row execute function public.provision_auth_user();
 
 alter table public.perfis enable row level security;
 alter table public.professores enable row level security;
@@ -29,8 +88,6 @@ grant select on table
   public.historico_execucoes
 to authenticated;
 
-grant insert (auth_id, nome_completo, email, tipo_perfil)
-  on table public.perfis to authenticated;
 grant insert (perfil_id, professor_id, objetivo)
   on table public.alunos to authenticated;
 grant update (nome_completo) on table public.perfis to authenticated;
@@ -58,14 +115,6 @@ drop policy if exists perfis_select_own on public.perfis;
 create policy perfis_select_own
 on public.perfis for select to authenticated
 using (auth_id = (select auth.uid()));
-
-drop policy if exists perfis_insert_own_student on public.perfis;
-create policy perfis_insert_own_student
-on public.perfis for insert to authenticated
-with check (
-  auth_id = (select auth.uid())
-  and tipo_perfil = 'aluno'
-);
 
 drop policy if exists perfis_update_own_name on public.perfis;
 create policy perfis_update_own_name
@@ -339,6 +388,15 @@ using (
     where a.perfil_id = historico_execucoes.aluno_id
       and p.auth_id = (select auth.uid())
       and p.tipo_perfil = 'aluno'
+  )
+  or exists (
+    select 1
+    from public.alunos a
+    join public.professores pr on pr.perfil_id = a.professor_id
+    join public.perfis p on p.id = pr.perfil_id
+    where a.perfil_id = historico_execucoes.aluno_id
+      and p.auth_id = (select auth.uid())
+      and p.tipo_perfil = 'professor'
   )
 );
 
