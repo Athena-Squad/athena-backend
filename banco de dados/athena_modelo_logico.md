@@ -109,7 +109,8 @@ create table historico_execucoes (
 
 ## 4. Pontos a definir na implementação
 
-1. **Criação do perfil no cadastro (RF01):** trigger em `auth.users` que insere em `perfis` a partir do `raw_user_meta_data`, ou `insert` feito pelo front após o `signUp`. O trigger é preferível, porque o RNF04 pede que as regras fiquem no banco.
-2. **Segurança do `tipo_perfil`:** o RLS deve impedir que o usuário escolha ou altere o próprio tipo de perfil para `professor`.
-3. **RLS (RNF04):** as políticas usam `auth.uid()` ligado a `perfis.auth_id`. O aluno lê apenas as próprias fichas e histórico. Somente professor faz `insert`, `update` e `delete` em `fichas_treino` e `exercicios` dos seus alunos.
-4. **Padronização de nomes:** o diagrama de classes mistura "Registro" e "Registrar" (`consolidarRegisto()`, `registarExecucao()`). Vale uniformizar.
+1. **Criação do perfil no cadastro (RF01):** trigger em `auth.users` ou `insert` feito pelo front após o `signUp`. Se usar trigger, defina `tipo_perfil` como `'aluno'` no próprio trigger; não confie em `tipo_perfil` recebido em `raw_user_meta_data`.
+2. **Segurança do `tipo_perfil`:** a política permite que o próprio usuário crie apenas perfil de aluno; os privilégios de coluna permitem atualizar somente `nome_completo`.
+3. **RLS (RNF04):** as políticas em `policies/athena_rls.sql` ligam `auth.uid()` a `perfis.auth_id`. O aluno lê apenas os próprios dados e registra execução de exercícios das próprias fichas. O professor lê seus alunos vinculados e faz `insert`, `update` e `delete` em fichas e exercícios desses alunos.
+4. **Provisionamento:** perfis de professor e vínculo entre aluno e professor são operações administrativas feitas por processo confiável com `service_role`; essa chave nunca deve ser usada no front-end.
+5. **Padronização de nomes:** o diagrama de classes mistura "Registro" e "Registrar" (`consolidarRegisto()`, `registarExecucao()`). Vale uniformizar.

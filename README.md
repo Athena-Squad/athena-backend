@@ -25,6 +25,16 @@ O projeto adotou uma arquitetura ágil **Serverless/BaaS (Backend as a Service)*
 - Autenticação nativa (Supabase Auth)
 - Controle de acesso via **RLS (Row Level Security)**
 
+## 🔐 Segurança do banco (RLS)
+No Supabase, crie as tabelas conforme o script em
+[`banco de dados/athena_modelo_logico.md`](./banco%20de%20dados/athena_modelo_logico.md)
+e depois execute [`policies/athena_rls.sql`](./policies/athena_rls.sql) no SQL Editor.
+
+As políticas limitam alunos aos próprios dados e professores aos alunos vinculados.
+O cadastro de professores e a associação entre aluno e professor devem ser feitos
+por um processo administrativo confiável; nunca exponha a chave `service_role`
+no front-end.
+
 ## ⚙️ Como Executar Localmente
 Para clonar e rodar este projeto em sua máquina, você precisará apenas do [Git](https://git-scm.com), de uma IDE como o **VS Code**, e da extensão **Live Server**.
 
